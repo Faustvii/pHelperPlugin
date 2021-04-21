@@ -21,10 +21,20 @@
             return new List<AbstractParameter>();
         }
 
+        private bool hasRepaired;
+
         public override bool Applicable(IController hud)
         {
-            if (!hud.Game.Me.IsInTown || !hud.Render.IsUiElementVisible(UiPathConstants.Blacksmith.UNIQUE_PAGE))
+            if (!hud.Game.Me.IsInTown)
                 return false;
+
+            var blacksmithOpen = hud.Render.IsUiElementVisible(UiPathConstants.Blacksmith.UNIQUE_PAGE);
+
+            if (!blacksmithOpen)
+            {
+                hasRepaired = false;
+                return false;
+            }
 
             if (!AnyDamagedItems(hud))
             {
@@ -36,6 +46,8 @@
 
         public override void Invoke(IController hud)
         {
+            if (hasRepaired)
+                return;
             var goldCostElement = hud.Render.GetOrRegisterAndGetUiElement(UiPathConstants.Blacksmith.REPAIR_ALL);
             hud.Render.WaitForVisiblityAndClickOrAbortHotkeyEvent(UiPathConstants.Blacksmith.REPAIR_PAGE, 500);
             var goldCost = GetGoldCost(goldCostElement);
@@ -44,6 +56,8 @@
                 // We can't afford to repair, let's not try and end up in a repair loop.
                 return;
             }
+
+            hasRepaired = true;
 
             hud.Render.WaitForVisiblityAndClickOrAbortHotkeyEvent(UiPathConstants.Blacksmith.REPAIR_ALL, 250);
         }
@@ -60,10 +74,23 @@
 
         private bool AnyDamagedItems(IController hud)
         {
-            var equippedItems = hud.Game.Items.Where(i => i.Location == ItemLocation.Head || i.Location == ItemLocation.Torso || i.Location == ItemLocation.Torso ||
-                i.Location == ItemLocation.RightHand || i.Location == ItemLocation.LeftHand || i.Location == ItemLocation.Hands || i.Location == ItemLocation.Waist ||
-                i.Location == ItemLocation.Feet || i.Location == ItemLocation.Shoulders || i.Location == ItemLocation.Legs || i.Location == ItemLocation.Bracers ||
-                i.Location == ItemLocation.LeftRing || i.Location == ItemLocation.RightRing || i.Location == ItemLocation.Neck);
+            var equippedItems = hud.Game.Items.Where(i => i.Location >= ItemLocation.Head && i.Location <= ItemLocation.Neck);
+
+            var statItems = equippedItems.Select(x => new
+            {
+                ItemName = x.FullNameEnglish,
+                    StatList = x.StatList.Where(s => s.Id.Contains("Durability"))
+            });
+
+            foreach (var statItem in statItems)
+            {
+                var currentDurability = statItem.StatList.FirstOrDefault(i => i.Id.Contains("Durability_Cur"))?.DoubleValue;
+                var maxDurability = statItem.StatList.FirstOrDefault(i => i.Id.Contains("Durability_Max"))?.DoubleValue;
+                if (currentDurability != maxDurability)
+                    hud.TextLog.Log("repair", $"{statItem.ItemName} {currentDurability}/{maxDurability}");
+
+            }
+
             foreach (var item in equippedItems)
             {
                 var currentDurability = item.StatList.FirstOrDefault(i => i.Id.Contains("Durability_Cur"))?.DoubleValue;
